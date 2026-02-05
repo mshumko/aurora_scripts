@@ -1,10 +1,11 @@
 [project]
-name = "scripts"
+name = "aurora_scripts"
 version = "0.1.0"
-description = "Add your description here"
+description = "Mike's scripts to create aurora animations from a DLSR timelapse."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "ffmpeg-python>=0.2.0",
     "pillow>=12.1.0",
+    "tqdm>=4.67.3",
 ]

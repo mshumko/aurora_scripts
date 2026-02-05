@@ -42,7 +42,7 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
         font = ImageFont.load_default()
 
     margin = 100
-    for i, file in tqdm.tqdm(enumerate(input_files, start=1), total=len(input_files), desc="Copying and editing images"):
+    for i, file in tqdm.tqdm(enumerate(input_files, start=1), total=len(input_files), desc="Step 1: Copying and editing images"):
         dest_name = f"image{i:04d}{ext}"
         dest = tmpdir_path / dest_name
 
@@ -161,7 +161,7 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
     pattern = str(tmpdir_path / f"image%04d{ext}")
     out_path = input_files[0].parent / f"ffmpeg_animation_{fps}fps.mp4"
 
-    print(f"Writing animation to: {out_path}")
+    print(f"Step 2: Writing animation to: {out_path}")
     try:
         inp = ffmpeg.input(pattern, framerate=fps, start_number=1)
         filter = inp.filter('scale', 1280, -1)

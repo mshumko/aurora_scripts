@@ -20,10 +20,11 @@ def parse_args():
     parser.add_argument("--framerate", type=int, default=24, help="Output framerate (default: 24)")
     parser.add_argument("--watermark", type=str, default="Mike Shumko", help="Watermark text to place in bottom-right (default: 'Mike Shumko')")
     parser.add_argument("--no_time", action="store_true", help="Do not include image timestamps")
+    parser.add_argument("--timezone", type=str, default="AKST",)
     parser.set_defaults(time=True)
     return parser.parse_args()
 
-def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False):
+def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False, timezone="AKST"):
     ext = input_files[0].suffix.lower()
 
     # create temporary dir and copy files into image%04d.<ext>
@@ -95,6 +96,8 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
                             timestamp_text = ""
 
                     if timestamp_text:
+                        if timezone:
+                            timestamp_text += f" {timezone}"
                         try:
                             try:
                                 bbox_ts = draw.textbbox((0, 0), timestamp_text, font=font)
@@ -196,7 +199,7 @@ def main():
     if len(files)==0:
         raise FileNotFoundError("No files remain after applying start/end filters")
 
-    create_animation(files, fps=args.framerate, watermark=args.watermark, no_time=args.no_time)
+    create_animation(files, fps=args.framerate, watermark=args.watermark, no_time=args.no_time, timezone=args.timezone)
     
 
 if __name__ == "__main__":

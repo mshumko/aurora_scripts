@@ -5,7 +5,8 @@ import sys
 import shutil
 
 import ffmpeg
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ExifTags
+from datetime import datetime
 
 def parse_args():
     parser = argparse.ArgumentParser(description=(
@@ -18,9 +19,11 @@ def parse_args():
     parser.add_argument("--extension", type=str, default='jpg', help="End filename (optional)")
     parser.add_argument("--framerate", type=int, default=24, help="Output framerate (default: 24)")
     parser.add_argument("--watermark", type=str, default="Mike Shumko", help="Watermark text to place in bottom-right (default: 'Mike Shumko')")
+    parser.add_argument("--no_time", action="store_true", help="Do not include image timestamps")
+    parser.set_defaults(time=True)
     return parser.parse_args()
 
-def create_animation(input_files, fps=30, watermark="Mike Shumko"):
+def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False):
     ext = input_files[0].suffix.lower()
 
     # create temporary dir and copy files into image%04d.<ext>
@@ -52,6 +55,63 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko"):
 
                 txt = Image.new("RGBA", im.size, (255,255,255,0))
                 draw = ImageDraw.Draw(txt)
+
+                # optionally draw timestamp in lower-left
+                if not no_time:
+                    # try EXIF DateTimeOriginal / DateTime / DateTimeDigitized first
+                    timestamp_text = None
+                    try:
+                        exif = im.getexif()
+                        if exif:
+                            for tag, val in exif.items():
+                                name = ExifTags.TAGS.get(tag, tag)
+                                if name in ("DateTimeOriginal", "DateTime", "DateTimeDigitized"):
+                                    if isinstance(val, bytes):
+                                        try:
+                                            val = val.decode(errors='ignore')
+                                        except Exception:
+                                            val = str(val)
+                                    timestamp_text = str(val)
+                                    break
+                    except Exception:
+                        timestamp_text = None
+
+                    if timestamp_text:
+                        # EXIF date format is often YYYY:MM:DD HH:MM:SS -> convert to YYYY-MM-DD
+                        try:
+                            parts = timestamp_text.split(' ')
+                            if len(parts) >= 1:
+                                date_part = parts[0].replace(':', '-', 2)
+                                time_part = parts[1] if len(parts) > 1 else ''
+                                timestamp_text = f"{date_part} {time_part}".strip()
+                        except Exception:
+                            pass
+                    else:
+                        # fall back to file modification time
+                        try:
+                            ts = datetime.fromtimestamp(file.stat().st_mtime)
+                            timestamp_text = ts.strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            timestamp_text = ""
+
+                    if timestamp_text:
+                        try:
+                            try:
+                                bbox_ts = draw.textbbox((0, 0), timestamp_text, font=font)
+                                ts_w = bbox_ts[2] - bbox_ts[0]
+                                ts_h = bbox_ts[3] - bbox_ts[1]
+                            except AttributeError:
+                                ts_w, ts_h = draw.textsize(timestamp_text, font=font)
+
+                            small_margin = 50
+                            tx = small_margin
+                            ty = im.height - ts_h - small_margin
+                            # shadow then text for readability
+                            draw.text((tx+1, ty+1), timestamp_text, font=font, fill=(0,0,0,180))
+                            draw.text((tx, ty), timestamp_text, font=font, fill=(255,255,255,220))
+                        except Exception:
+                            # ignore timestamp drawing errors
+                            pass
 
                 text = watermark
                 # Compute text size robustly: prefer textbbox, fall back to textsize or font.getsize
@@ -136,7 +196,7 @@ def main():
     if len(files)==0:
         raise FileNotFoundError("No files remain after applying start/end filters")
 
-    create_animation(files, fps=args.framerate, watermark=args.watermark)
+    create_animation(files, fps=args.framerate, watermark=args.watermark, no_time=args.no_time)
     
 
 if __name__ == "__main__":

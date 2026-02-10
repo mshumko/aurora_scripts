@@ -17,7 +17,7 @@ def parse_args():
     parser.add_argument("path", type=pathlib.Path, help="Path to a directory or file")
     parser.add_argument("--start", "-s", metavar="START", help="Start filename (optional)")
     parser.add_argument("--end", "-e", metavar="END", help="End filename (optional)")
-    parser.add_argument("--extension", type=str, default='jpg', help="End filename (optional)")
+    parser.add_argument("--extension", type=str, default='jpg', help="Filename extension (optional)")
     parser.add_argument("--framerate", type=int, default=24, help="Output framerate (default: 24)")
     parser.add_argument("--watermark", type=str, default="Mike Shumko", help="Watermark text to place in bottom-right (default: 'Mike Shumko')")
     parser.add_argument("--no_time", action="store_true", help="Do not include image timestamps")

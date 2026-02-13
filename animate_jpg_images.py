@@ -22,10 +22,12 @@ def parse_args():
     parser.add_argument("--watermark", type=str, default="Mike Shumko", help="Watermark text to place in bottom-right (default: 'Mike Shumko')")
     parser.add_argument("--no_time", action="store_true", help="Do not include image timestamps")
     parser.add_argument("--timezone", type=str, default="AKST",)
+    parser.add_argument("--rotate", choices=["none", "cw", "ccw"], default="none",
+                        help="Rotate images before watermarking: 'cw' or 'ccw' (90 deg)")
     parser.set_defaults(time=True)
     return parser.parse_args()
 
-def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False, timezone="AKST"):
+def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False, timezone="AKST", rotate="none"):
     ext = input_files[0].suffix.lower()
 
     # create temporary dir and copy files into image%04d.<ext>
@@ -48,15 +50,26 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
 
         # Open with PIL, apply watermark, and save to destination
         try:
-            with Image.open(file) as im:
-                # ensure RGBA for alpha composite
-                if im.mode not in ("RGB", "RGBA"):
-                    im = im.convert("RGBA")
-                else:
-                    im = im.convert("RGBA")
+                with Image.open(file) as im:
+                    # ensure RGBA for alpha composite
+                    if im.mode not in ("RGB", "RGBA"):
+                        im = im.convert("RGBA")
+                    else:
+                        im = im.convert("RGBA")
 
-                txt = Image.new("RGBA", im.size, (255,255,255,0))
-                draw = ImageDraw.Draw(txt)
+                    # apply rotation before drawing text if requested
+                    if rotate and rotate != "none":
+                        try:
+                            if rotate == "ccw":
+                                im = im.rotate(90, expand=True)
+                            elif rotate == "cw":
+                                im = im.rotate(-90, expand=True)
+                        except Exception:
+                            # if rotation fails, continue without rotating
+                            pass
+
+                    txt = Image.new("RGBA", im.size, (255,255,255,0))
+                    draw = ImageDraw.Draw(txt)
 
                 # optionally draw timestamp in lower-left
                 if not no_time:
@@ -139,7 +152,7 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
                 watermarked = Image.alpha_composite(im, txt)
 
                 # Save as JPEG (or original extension); use RGB for JPEG
-                if ext.lower() in (".jpg", ".jpeg"):
+                if ext.lower() in (".jpg", ".jpeg", ".png"):
                     watermarked = watermarked.convert("RGB")
                     watermarked.save(dest, quality=95)
                 else:
@@ -199,7 +212,7 @@ def main():
     if len(files)==0:
         raise FileNotFoundError("No files remain after applying start/end filters")
 
-    create_animation(files, fps=args.framerate, watermark=args.watermark, no_time=args.no_time, timezone=args.timezone)
+    create_animation(files, fps=args.framerate, watermark=args.watermark, no_time=args.no_time, timezone=args.timezone, rotate=args.rotate)
     
 
 if __name__ == "__main__":

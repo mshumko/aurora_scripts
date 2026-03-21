@@ -24,10 +24,12 @@ def parse_args():
     parser.add_argument("--timezone", type=str, default="AKST",)
     parser.add_argument("--rotate", choices=["none", "cw", "ccw"], default="none",
                         help="Rotate images before watermarking: 'cw' or 'ccw' (90 deg)")
+    parser.add_argument("--keep_temp", action="store_false",
+                        help="Keep temporary image sequence folder after animation is written")
     parser.set_defaults(time=True)
     return parser.parse_args()
 
-def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False, timezone="AKST", rotate="none"):
+def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False, timezone="AKST", rotate="none", keep_temp=False):
     ext = input_files[0].suffix.lower()
 
     # create temporary dir and copy files into image%04d.<ext>
@@ -186,6 +188,9 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
         raise
 
     print(f"Animation written to: {out_path}")
+    if keep_temp:
+        shutil.rmtree(tmpdir_path, ignore_errors=True)
+        print(f"Temporary folder deleted: {tmpdir_path}")
 
 
 def main():
@@ -212,7 +217,15 @@ def main():
     if len(files)==0:
         raise FileNotFoundError("No files remain after applying start/end filters")
 
-    create_animation(files, fps=args.framerate, watermark=args.watermark, no_time=args.no_time, timezone=args.timezone, rotate=args.rotate)
+    create_animation(
+        files,
+        fps=args.framerate,
+        watermark=args.watermark,
+        no_time=args.no_time,
+        timezone=args.timezone,
+        rotate=args.rotate,
+        keep_temp=args.keep_temp,
+    )
     
 
 if __name__ == "__main__":

@@ -187,10 +187,11 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
         print("ffmpeg failed:", e, file=sys.stderr)
         raise
 
-    print(f"Animation written to: {out_path}")
     if keep_temp:
         shutil.rmtree(tmpdir_path, ignore_errors=True)
         print(f"Temporary folder deleted: {tmpdir_path}")
+    
+    print(f"Animation written to: {out_path}")
 
 
 def main():

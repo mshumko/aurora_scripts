@@ -3,16 +3,22 @@ import pathlib
 import argparse
 import sys
 import shutil
+from datetime import datetime
 
 import tqdm
 import ffmpeg
 import PIL
-import PIL.ImageFilter
+import numpy as np
+# import PIL.ImageFilter
 import PIL.ImageFont
 import PIL.ExifTags
 import PIL.ImageDraw
-# from PIL import Image, ImageDraw, ImageFont, ExifTags
-from datetime import datetime
+try:
+    import scipy.ndimage
+    scipy_imported = True
+except ImportError:
+    scipy_imported = False
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description=(
@@ -52,6 +58,9 @@ def create_animation(
         ):
     ext = input_files[0].suffix.lower()
 
+    if (median_filter > 0) and (not scipy_imported):
+        raise ImportError("scipy is required for median filtering. Please install scipy or set --median_filter to 0.")
+
     # create temporary dir and copy files into image%04d.<ext>
     tmpdir = input_files[0].parent / "temp_imgseq"
     if tmpdir.exists():
@@ -81,7 +90,16 @@ def create_animation(
 
                 # apply median filter if requested
                 if median_filter > 0:
-                    im = im.filter(PIL.ImageFilter.MedianFilter(size=median_filter))
+                    im_array = np.array(im)
+
+                    if im_array.ndim == 3:  # Color image with channels
+                        filtered = np.stack([scipy.ndimage.median_filter(im_array[:,:,i], size=median_filter) 
+                                            for i in range(im_array.shape[2])], axis=2)
+                    else:  # Grayscale
+                        filtered = scipy.ndimage.median_filter(im_array, size=median_filter)
+
+                    # Convert back to PIL Image
+                    im = PIL.Image.fromarray(filtered.astype(np.uint8))
 
                 # apply rotation before drawing text if requested
                 if rotate and rotate != "none":

@@ -6,7 +6,12 @@ import shutil
 
 import tqdm
 import ffmpeg
-from PIL import Image, ImageDraw, ImageFont, ExifTags
+import PIL
+import PIL.ImageFilter
+import PIL.ImageFont
+import PIL.ExifTags
+import PIL.ImageDraw
+# from PIL import Image, ImageDraw, ImageFont, ExifTags
 from datetime import datetime
 
 def parse_args():
@@ -26,10 +31,25 @@ def parse_args():
                         help="Rotate images before watermarking: 'cw' or 'ccw' (90 deg)")
     parser.add_argument("--keep_temp", action="store_false",
                         help="Keep temporary image sequence folder after animation is written")
+    parser.add_argument(
+        "--median_filter", 
+        type=int, 
+        default=0, 
+        help="Apply the PIL.ImageFilter.MedianFilter(size=n) where n is 0 by default."
+        )
     parser.set_defaults(time=True)
     return parser.parse_args()
 
-def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False, timezone="AKST", rotate="none", keep_temp=False):
+def create_animation(
+        input_files, 
+        fps=30, 
+        watermark="Mike Shumko", 
+        no_time=False, 
+        timezone="AKST", 
+        rotate="none", 
+        keep_temp=False, 
+        median_filter=0
+        ):
     ext = input_files[0].suffix.lower()
 
     # create temporary dir and copy files into image%04d.<ext>
@@ -41,9 +61,9 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
 
     # prepare font (fallback to default)
     try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 100)
+        font = PIL.ImageFont.truetype("DejaVuSans.ttf", 100)
     except Exception:
-        font = ImageFont.load_default()
+        font = PIL.ImageFont.load_default()
 
     margin = 100
     for i, file in tqdm.tqdm(enumerate(input_files, start=1), total=len(input_files), desc="Step 1: Copying and editing images"):
@@ -52,85 +72,89 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
 
         # Open with PIL, apply watermark, and save to destination
         try:
-                with Image.open(file) as im:
-                    # ensure RGBA for alpha composite
-                    if im.mode not in ("RGB", "RGBA"):
-                        im = im.convert("RGBA")
-                    else:
-                        im = im.convert("RGBA")
+            with PIL.Image.open(file) as im:
+                # ensure RGBA for alpha composite
+                if im.mode not in ("RGB", "RGBA"):
+                    im = im.convert("RGBA")
+                else:
+                    im = im.convert("RGBA")
 
-                    # apply rotation before drawing text if requested
-                    if rotate and rotate != "none":
-                        try:
-                            if rotate == "ccw":
-                                im = im.rotate(90, expand=True)
-                            elif rotate == "cw":
-                                im = im.rotate(-90, expand=True)
-                        except Exception:
-                            # if rotation fails, continue without rotating
-                            pass
+                # apply median filter if requested
+                if median_filter > 0:
+                    im = im.filter(PIL.ImageFilter.MedianFilter(size=median_filter))
 
-                    txt = Image.new("RGBA", im.size, (255,255,255,0))
-                    draw = ImageDraw.Draw(txt)
-
-                # optionally draw timestamp in lower-left
-                if not no_time:
-                    # try EXIF DateTimeOriginal / DateTime / DateTimeDigitized first
-                    timestamp_text = None
+                # apply rotation before drawing text if requested
+                if rotate and rotate != "none":
                     try:
-                        exif = im.getexif()
-                        if exif:
-                            for tag, val in exif.items():
-                                name = ExifTags.TAGS.get(tag, tag)
-                                if name in ("DateTimeOriginal", "DateTime", "DateTimeDigitized"):
-                                    if isinstance(val, bytes):
-                                        try:
-                                            val = val.decode(errors='ignore')
-                                        except Exception:
-                                            val = str(val)
-                                    timestamp_text = str(val)
-                                    break
+                        if rotate == "ccw":
+                            im = im.rotate(90, expand=True)
+                        elif rotate == "cw":
+                            im = im.rotate(-90, expand=True)
                     except Exception:
-                        timestamp_text = None
+                        # if rotation fails, continue without rotating
+                        pass
 
-                    if timestamp_text:
-                        # EXIF date format is often YYYY:MM:DD HH:MM:SS -> convert to YYYY-MM-DD
-                        try:
-                            parts = timestamp_text.split(' ')
-                            if len(parts) >= 1:
-                                date_part = parts[0].replace(':', '-', 2)
-                                time_part = parts[1] if len(parts) > 1 else ''
-                                timestamp_text = f"{date_part} {time_part}".strip()
-                        except Exception:
-                            pass
-                    else:
-                        # fall back to file modification time
-                        try:
-                            ts = datetime.fromtimestamp(file.stat().st_mtime)
-                            timestamp_text = ts.strftime("%Y-%m-%d %H:%M:%S")
-                        except Exception:
-                            timestamp_text = ""
+                txt = PIL.Image.new("RGBA", im.size, (255,255,255,0))
+                draw = PIL.ImageDraw.Draw(txt)
 
-                    if timestamp_text:
-                        if timezone:
-                            timestamp_text += f" {timezone}"
-                        try:
-                            try:
-                                bbox_ts = draw.textbbox((0, 0), timestamp_text, font=font)
-                                ts_w = bbox_ts[2] - bbox_ts[0]
-                                ts_h = bbox_ts[3] - bbox_ts[1]
-                            except AttributeError:
-                                ts_w, ts_h = draw.textsize(timestamp_text, font=font)
+            # optionally draw timestamp in lower-left
+            if not no_time:
+                # try EXIF DateTimeOriginal / DateTime / DateTimeDigitized first
+                timestamp_text = None
+                try:
+                    exif = im.getexif()
+                    if exif:
+                        for tag, val in exif.items():
+                            name = PIL.ExifTags.TAGS.get(tag, tag)
+                            if name in ("DateTimeOriginal", "DateTime", "DateTimeDigitized"):
+                                if isinstance(val, bytes):
+                                    try:
+                                        val = val.decode(errors='ignore')
+                                    except Exception:
+                                        val = str(val)
+                                timestamp_text = str(val)
+                                break
+                except Exception:
+                    timestamp_text = None
 
-                            small_margin = 50
-                            tx = small_margin
-                            ty = im.height - ts_h - small_margin
-                            # shadow then text for readability
-                            draw.text((tx+1, ty+1), timestamp_text, font=font, fill=(0,0,0,180))
-                            draw.text((tx, ty), timestamp_text, font=font, fill=(255,255,255,220))
-                        except Exception:
-                            # ignore timestamp drawing errors
-                            pass
+                if timestamp_text:
+                    # EXIF date format is often YYYY:MM:DD HH:MM:SS -> convert to YYYY-MM-DD
+                    try:
+                        parts = timestamp_text.split(' ')
+                        if len(parts) >= 1:
+                            date_part = parts[0].replace(':', '-', 2)
+                            time_part = parts[1] if len(parts) > 1 else ''
+                            timestamp_text = f"{date_part} {time_part}".strip()
+                    except Exception:
+                        pass
+                else:
+                    # fall back to file modification time
+                    try:
+                        ts = datetime.fromtimestamp(file.stat().st_mtime)
+                        timestamp_text = ts.strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        timestamp_text = ""
+
+                if timestamp_text:
+                    if timezone:
+                        timestamp_text += f" {timezone}"
+                    try:
+                        try:
+                            bbox_ts = draw.textbbox((0, 0), timestamp_text, font=font)
+                            ts_w = bbox_ts[2] - bbox_ts[0]
+                            ts_h = bbox_ts[3] - bbox_ts[1]
+                        except AttributeError:
+                            ts_w, ts_h = draw.textsize(timestamp_text, font=font)
+
+                        small_margin = 50
+                        tx = small_margin
+                        ty = im.height - ts_h - small_margin
+                        # shadow then text for readability
+                        draw.text((tx+1, ty+1), timestamp_text, font=font, fill=(0,0,0,180))
+                        draw.text((tx, ty), timestamp_text, font=font, fill=(255,255,255,220))
+                    except Exception:
+                        # ignore timestamp drawing errors
+                        pass
 
                 text = watermark
                 # Compute text size robustly: prefer textbbox, fall back to textsize or font.getsize
@@ -151,7 +175,7 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
                 draw.text((x+1, y+1), text, font=font, fill=(0,0,0,180))
                 draw.text((x, y), text, font=font, fill=(255,255,255,200))
 
-                watermarked = Image.alpha_composite(im, txt)
+                watermarked = PIL.Image.alpha_composite(im, txt)
 
                 # Save as JPEG (or original extension); use RGB for JPEG
                 if ext.lower() in (".jpg", ".jpeg", ".png"):
@@ -168,9 +192,6 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
             except AttributeError:
                 # older Pythons: fall back to shutil.copy2 for metadata-preserving copy
                 shutil.copy2(file, dest)
-
-    # print temp dir contents for debugging (confirm contiguous numbering)
-    names = sorted(p.name for p in tmpdir_path.iterdir())
 
     # build ffmpeg input pattern (use same extension)
     pattern = str(tmpdir_path / f"image%04d{ext}")
@@ -192,6 +213,7 @@ def create_animation(input_files, fps=30, watermark="Mike Shumko", no_time=False
         print(f"Temporary folder deleted: {tmpdir_path}")
     
     print(f"Animation written to: {out_path}")
+    return
 
 
 def main():
@@ -226,6 +248,7 @@ def main():
         timezone=args.timezone,
         rotate=args.rotate,
         keep_temp=args.keep_temp,
+        median_filter=args.median_filter
     )
     
 

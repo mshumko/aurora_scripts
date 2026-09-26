@@ -9,7 +9,7 @@ import tqdm
 import ffmpeg
 import PIL
 import numpy as np
-# import PIL.ImageFilter
+import PIL.ImageEnhance
 import PIL.ImageFont
 import PIL.ExifTags
 import PIL.ImageDraw
@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument("--end", "-e", metavar="END", help="End filename (optional)")
     parser.add_argument("--extension", type=str, default='jpg', help="Filename extension (optional)")
     parser.add_argument("--framerate", type=int, default=24, help="Output framerate (default: 24)")
+    parser.add_argument("--brightness", type=int, default=1, help="Output brightness adjustment 1")
     parser.add_argument("--watermark", type=str, default="Mike Shumko", help="Watermark text to place in bottom-right (default: 'Mike Shumko')")
     parser.add_argument("--no_time", action="store_true", help="Do not include image timestamps")
     parser.add_argument("--timezone", type=str, default="AKST",)
@@ -46,16 +47,48 @@ def parse_args():
     parser.set_defaults(time=True)
     return parser.parse_args()
 
+def _image_capture_time(image_path):
+    """Return best-effort capture time from EXIF, else file mtime."""
+    # try:
+    with PIL.Image.open(image_path) as image:
+        exif = image.getexif()
+    if exif:
+        for tag, val in exif.items():
+            name = PIL.ExifTags.TAGS.get(tag, tag)
+            if name in ("DateTimeOriginal", "DateTime", "DateTimeDigitized"):
+                if isinstance(val, bytes):
+                    try:
+                        val = val.decode(errors="ignore")
+                    except Exception:
+                        val = str(val)
+                raw = str(val).strip()
+                for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        return datetime.strptime(raw, fmt)
+                    except ValueError:
+                        continue
+                break
+    # except Exception:
+    #     pass
+
+    try:
+        return datetime.fromtimestamp(image_path.stat().st_mtime)
+    except Exception:
+        return None
+    
+
 def create_animation(
         input_files, 
-        fps=30, 
+        fps=30,
+        brightness=1,
         watermark="Mike Shumko", 
         no_time=False, 
         timezone="AKST", 
         rotate="none", 
         keep_temp=False, 
-        median_filter=0
+        median_filter=0,
         ):
+
     ext = input_files[0].suffix.lower()
 
     if (median_filter > 0) and (not scipy_imported):
@@ -88,7 +121,10 @@ def create_animation(
                 else:
                     im = im.convert("RGBA")
 
-                # apply median filter if requested
+                if brightness != 1:
+                    enhancer = PIL.ImageEnhance.Brightness(im)
+                    im = enhancer.enhance(brightness)
+
                 if median_filter > 0:
                     im_array = np.array(im)
 
@@ -213,7 +249,13 @@ def create_animation(
 
     # build ffmpeg input pattern (use same extension)
     pattern = str(tmpdir_path / f"image%04d{ext}")
-    out_path = input_files[0].parent / f"ffmpeg_animation_{fps}fps.mp4"
+    movie_start_time = _image_capture_time(input_files[0])
+    movie_end_time = _image_capture_time(input_files[-1])
+    if movie_start_time and movie_end_time:
+        movie_name = f"{movie_start_time:%Y%m%d_%H%M%S}_{movie_end_time:%H%M%S}_aurora_video_{fps}fps.mp4"
+    else:
+        movie_name = f"aurora_video_{fps}fps.mp4"
+    out_path = input_files[0].parent / movie_name
 
     print(f"Step 2: Writing animation to: {out_path}")
     try:
@@ -261,6 +303,7 @@ def main():
     create_animation(
         files,
         fps=args.framerate,
+        brightness=args.brightness,
         watermark=args.watermark,
         no_time=args.no_time,
         timezone=args.timezone,
